@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,7 +45,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer image.Close()
 
-	imgMediaType := strings.Split(imgHeader.Header.Get("Content-Type"), "/")[1]
+	mediaType, _, err := mime.ParseMediaType(imgHeader.Header.Get("Content-Type"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "error processing media type", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "must be a png or jpeg image", fmt.Errorf("expected image, but found: %s", mediaType))
+		return
+	}
+
+	imgMediaExt := strings.Split(mediaType, "/")[1]
 
 	dbVideo, err := cfg.db.GetVideo(videoID)
 	if err != nil {
@@ -57,7 +68,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	thumbnailFP := filepath.Join(cfg.assetsRoot, videoIDString+"."+imgMediaType)
+	thumbnailFP := filepath.Join(cfg.assetsRoot, videoIDString+"."+imgMediaExt)
 	file, err := os.Create(thumbnailFP)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error processing request", err)
@@ -66,7 +77,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	io.Copy(file, image)
 
-	thumbnailUrl := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoIDString, imgMediaType)
+	thumbnailUrl := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoIDString, imgMediaExt)
 
 	dbVideo.ThumbnailURL = &thumbnailUrl
 
